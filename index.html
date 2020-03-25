@@ -1,251 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no"
-    />
-    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-    <title>Document</title>
-    <link
-      href="https://cdn.bootcss.com/twitter-bootstrap/4.3.1/css/bootstrap.css"
-      rel="stylesheet"
-    />
-    <link
-      href="https://cdn.bootcss.com/element-ui/2.12.0/theme-chalk/index.css"
-      rel="stylesheet"
-    />
-    <script src="https://cdn.bootcss.com/vue/2.6.10/vue.min.js"></script>
-    <script src="https://cdn.bootcss.com/element-ui/2.12.0/index.js"></script>
-    <script src="./static/xlsx.full.min.js"></script>
-    <script src="https://cdn.bootcss.com/echarts/4.2.1/echarts.min.js"></script>
-    <style>
-      .el-upload-list {
-        display: none !important;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app" class="container">
-      <div class="mx-auto mt-3">
-        <el-upload
-          action="https://jsonplaceholder.typicode.com/posts/"
-          :on-preview="handlePreview"
-          :on-remove="handleRemove"
-          :before-remove="beforeRemove"
-          :on-exceed="handleExceed"
-          :file-list="fileList"
-          :http-request="parseFile"
-        >
-          <el-button size="small" type="primary">点击上传</el-button>
-        </el-upload>
-        <p class="text-danger mt-3">总支出： {{ outNumber }}元</p>
-        <p class="text-primary">存款：{{remainingNumber}}元</p>
-        <p class="text-info">总收入： {{ allNumber }}元</p>
-        <!-- 收入支出折线图 -->
-        <div id="main" style="width:1000px;height:400px;"></div>
-        <!-- 收入支出饼图 -->
-      </div>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+  <title>Document</title>
+  <link href="https://cdn.bootcss.com/twitter-bootstrap/4.3.1/css/bootstrap.css" rel="stylesheet" />
+  <link href="https://cdn.bootcss.com/element-ui/2.12.0/theme-chalk/index.css" rel="stylesheet" />
+  <script src="https://cdn.bootcss.com/vue/2.6.10/vue.min.js"></script>
+  <script src="https://cdn.bootcss.com/element-ui/2.12.0/index.js"></script>
+  <script src="./static/xlsx.full.min.js"></script>
+  <script src="https://cdn.bootcss.com/echarts/4.2.1/echarts.min.js"></script>
+  <style>
+    .el-upload-list {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app" class="container">
+    <div class="mx-auto mt-3">
+      <el-upload action="https://jsonplaceholder.typicode.com/posts/" :on-preview="handlePreview"
+        :on-remove="handleRemove" :before-remove="beforeRemove" :on-exceed="handleExceed" :file-list="fileList"
+        :http-request="parseFile">
+        <el-button size="small" type="primary">导入</el-button>
+      </el-upload>
+
     </div>
-    <script>
-      console.log(XLSX);
-      new Vue({
-        el: "#app",
-        data() {
-          return {
-            fileList: [],
-            json: [],
-            chart: null,
-            remainingNumber: 0,
-            allNumber: 0,
-            outNumber: 0
+  </div>
+  <script>
+    const Sheet1 = 'Sheet1';
+    const Sheet2 = 'Sheet2';
+    function sheet2blob(sheet, sheetName) {
+      sheetName = sheetName || 'sheet1';
+      var workbook = {
+        SheetNames: [sheetName],
+        Sheets: {}
+      };
+      workbook.Sheets[sheetName] = sheet; // 生成excel的配置项
+
+      var wopts = {
+        bookType: 'xlsx', // 要生成的文件类型
+        bookSST: false, // 是否生成Shared String Table，官方解释是，如果开启生成速度会下降，但在低版本IOS设备上有更好的兼容性
+        type: 'binary'
+      };
+      var wbout = XLSX.write(workbook, wopts);
+      var blob = new Blob([s2ab(wbout)], {
+        type: "application/octet-stream"
+      }); // 字符串转ArrayBuffer
+      function s2ab(s) {
+        var buf = new ArrayBuffer(s.length);
+        var view = new Uint8Array(buf);
+        for (var i = 0; i != s.length; ++i) view[i] = s.charCodeAt(i) & 0xFF;
+        return buf;
+      }
+
+      return blob;
+    }
+
+    function openDownloadDialog(json, saveName) {
+      const sheet = XLSX.utils.json_to_sheet(json);
+      let url = sheet2blob(sheet, '合并数据');
+      if (typeof url == 'object' && url instanceof Blob) {
+        url = URL.createObjectURL(url); // 创建blob地址
+      }
+      var aLink = document.createElement('a');
+      aLink.href = url;
+      aLink.download = saveName || ''; // HTML5新增的属性，指定保存文件名，可以不要后缀，注意，file:///模式下不会生效
+      var event;
+      if (window.MouseEvent) event = new MouseEvent('click');
+      else {
+        event = document.createEvent('MouseEvents');
+        event.initMouseEvent('click', true, false, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+      }
+      aLink.dispatchEvent(event);
+    }
+    new Vue({
+      el: "#app",
+      data() {
+        return {
+          fileList: [],
+          json: [],
+          chart: null,
+          remainingNumber: 0,
+          allNumber: 0,
+          outNumber: 0
+        };
+      },
+      methods: {
+        // 读取本地文件
+        readWorkbookFromLocalFile(file, callback) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const data = e.target.result;
+            const workbook = XLSX.read(data, { type: "binary" });
+            if (callback) callback(workbook);
           };
+          reader.readAsBinaryString(file);
         },
-        methods: {
-          // 读取本地文件
-          readWorkbookFromLocalFile(file, callback) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-              const data = e.target.result;
-              const workbook = XLSX.read(data, { type: "binary" });
-              if (callback) callback(workbook);
-            };
-            reader.readAsBinaryString(file);
-          },
-          handleRemove(file, fileList) {},
-          handlePreview(file) {},
-          handleExceed(files, fileList) {},
-          beforeRemove(file, fileList) {},
-          parseFile($event) {
-            this.readWorkbookFromLocalFile($event.file, workbook => {
-              const json = XLSX.utils.sheet_to_json(workbook.Sheets["表格统计"]);
-              console.log(json);
-              this.json = json;
-              this.salaryRender(json);
-              this.incomeExpenses(json);
-            });
-          },
-          parseCellInfo(stringInfo) {
-            if (!stringInfo) {
-              return {};
-            }
-            const infoList = stringInfo.split("，");
-            const infoObj = {};
-            infoList.forEach(item => {
-              const [key, val] = item.split("=");
-              infoObj[key] = val;
-            });
-            return infoObj;
-          },
-          getCellSumInfo(stringInfo) {
-            return Object.values(this.parseCellInfo(stringInfo)).reduce(
-              (i, newNum) => {
-                return i + parseFloat(newNum);
-              },
-              0
-            );
-          },
-          /**
-           * 渲染工资收入
-           */
-          salaryRender(json) {
-            const dateList = json.map(item => item["日期"]);
-            const manDataList = json.map(item => item["男方工资收入"]);
-            const womanDataList = json.map(item => item["女方工资收入"]);
-            const allDataList = json.map(item => {
-              return item["女方工资收入"] + item["男方工资收入"];
-            });
-            const fixedChargesDataList = json.map(item =>
-              this.getCellSumInfo(item["固定支出"])
-            );
-            const lifeChargesDataList = json.map(item =>
-              this.getCellSumInfo(item["生活支出"])
-            );
-            const allChargesDataList = json.map(item => {
-              return (
-                this.getCellSumInfo(item["固定支出"]) +
-                this.getCellSumInfo(item["生活支出"])
-              );
-            });
-            const RemainingDataList = json.map(item => {
-              return (
-                item["女方工资收入"] +
-                item["男方工资收入"] -
-                (this.getCellSumInfo(item["固定支出"]) +
-                  this.getCellSumInfo(item["生活支出"]))
-              );
-            });
+        handleRemove(file, fileList) { },
+        handlePreview(file) { },
+        handleExceed(files, fileList) { },
+        beforeRemove(file, fileList) { },
+        parseFile($event) {
+          console.log($event.file);
+          const fileName = $event.file.name.split('.').slice(0, -1).join()
+          this.readWorkbookFromLocalFile($event.file, workbook => {
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[Sheet1]);
+            const json2 = XLSX.utils.sheet_to_json(workbook.Sheets[Sheet2]);
+            console.log(json);
+            console.log(json2);
+            const newJson = [];
+            json.forEach((item) => {
+              const code = String(item['职位代码']).trim();
+              const item2 = json2.filter((val) => String(val['职位代码']).trim() === code);
+              if (item2.length === 1) {
+                const data = item2[0];
+                console.log(code)
+                newJson.push({
+                  ...item,
+                  ...data
+                })
+              } else {
+                newJson.push({
+                  ...item
+                })
+              }
+            })
 
-            this.remainingNumber = RemainingDataList.reduce((i, newNum) => {
-              return i + parseFloat(newNum);
-            }, 0);
-
-            this.allNumber = allDataList.reduce((i, newNum) => {
-              return i + parseFloat(newNum);
-            }, 0);
-
-            this.outNumber = allChargesDataList.reduce((i, newNum) => {
-              return i + parseFloat(newNum);
-            }, 0);
-
-            const option = {
-              title: {
-                text: "工资收入"
-              },
-              tooltip: {},
-              legend: {
-                data: [
-                  "男方工资收入",
-                  "女方工资收入",
-                  "工资总收入",
-                  "固定支出",
-                  "生活支出",
-                  "总共支出",
-                  "存款"
-                ]
-              },
-              xAxis: {
-                type: "category",
-                data: dateList
-              },
-              yAxis: {},
-              series: [
-                {
-                  name: "男方工资收入",
-                  type: "line",
-                  data: manDataList
-                },
-                {
-                  name: "女方工资收入",
-                  type: "line",
-                  data: womanDataList
-                },
-                {
-                  name: "工资总收入",
-                  type: "line",
-                  data: allDataList
-                },
-                {
-                  name: "固定支出",
-                  type: "line",
-                  data: fixedChargesDataList
-                },
-                {
-                  name: "生活支出",
-                  type: "line",
-                  data: lifeChargesDataList
-                },
-                {
-                  name: "总共支出",
-                  type: "line",
-                  data: allChargesDataList
-                },
-                {
-                  name: "存款",
-                  type: "line",
-                  data: RemainingDataList
-                }
-              ]
-            };
-            this.chart = echarts.init(document.getElementById("main"));
-            // 使用刚指定的配置项和数据显示图表。
-            this.chart.setOption(option);
-          },
-          /*
-           *
-           */
-          incomeExpenses(json) {
-            const dateList = json.map(item => item["日期"]);
-            const manDataList = json.map(item => item["男方工资收入"]);
-            const womanDataList = json.map(item => item["女方工资收入"]);
-            const allDataList = json.map(item => {
-              return item["女方工资收入"] + item["男方工资收入"];
-            });
-            const fixedChargesDataList = json.map(item =>
-              this.getCellSumInfo(item["固定支出"])
-            );
-            const lifeChargesDataList = json.map(item =>
-              this.getCellSumInfo(item["生活支出"])
-            );
-            const allChargesDataList = json.map(item => {
-              return (
-                this.getCellSumInfo(item["固定支出"]) +
-                this.getCellSumInfo(item["生活支出"])
-              );
-            });
-            const RemainingDataList = json.map(item => {
-              return (
-                item["女方工资收入"] +
-                item["男方工资收入"] -
-                (this.getCellSumInfo(item["固定支出"]) +
-                  this.getCellSumInfo(item["生活支出"]))
-              );
-            });
-          }
+            openDownloadDialog(newJson, fileName + '-合并表格.xls')
+          });
         },
-        mounted() {}
-      });
-    </script>
-  </body>
+
+      },
+      mounted() { }
+    });
+  </script>
+</body>
+
 </html>
